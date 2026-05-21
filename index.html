@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>三分之一投资法回测模拟器</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+:root {
+  --bg: #0f172a; --surface: #1e293b; --surface2: #334155;
+  --border: #475569; --text: #e2e8f0; --text2: #94a3b8; --text3: #64748b;
+  --green: #22c55e; --red: #ef4444; --blue: #3b82f6; --amber: #f59e0b;
+  --purple: #a855f7;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+.header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+.header h1 { font-size: 18px; font-weight: 600; }
+.header h1 span { color: var(--amber); }
+.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+/* Config Panel */
+.config-panel { background: var(--surface); border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border); }
+.config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; align-items: end; }
+.form-group label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+.form-group input, .form-group select { width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; outline: none; }
+.form-group input:focus { border-color: var(--blue); }
+.btn { padding: 8px 24px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .2s; }
+.btn-primary { background: var(--blue); color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-sm { padding: 4px 12px; font-size: 12px; }
+
+/* Status Bar */
+.status-bar { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.metric-card { background: var(--surface); border-radius: 10px; padding: 14px 18px; flex: 1; min-width: 150px; border: 1px solid var(--border); }
+.metric-card .label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; }
+.metric-card .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+.metric-card .value.green { color: var(--green); }
+.metric-card .value.red { color: var(--red); }
+.metric-card .value.blue { color: var(--blue); }
+.metric-card .value.amber { color: var(--amber); }
+
+/* Charts */
+.chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.chart-box { background: var(--surface); border-radius: 12px; padding: 16px; border: 1px solid var(--border); }
+.chart-box.full { grid-column: 1 / -1; }
+.chart-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text2); }
+
+/* Trade Table */
+.trade-table-wrap { background: var(--surface); border-radius: 12px; padding: 16px; border: 1px solid var(--border); max-height: 500px; overflow: auto; }
+.trade-table-wrap h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text2); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { position: sticky; top: 0; background: var(--surface2); padding: 8px 10px; text-align: left; color: var(--text2); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--border); }
+td { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+tr:hover { background: var(--surface2); }
+.buy { color: var(--green); }
+.sell { color: var(--red); }
+
+/* Loading */
+.loading { display: none; text-align: center; padding: 40px; color: var(--text2); }
+.loading.show { display: block; }
+.spinner { border: 3px solid var(--border); border-top: 3px solid var(--blue); border-radius: 50%; width: 32px; height: 32px; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Toast */
+.toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 14px; z-index: 999; display: none; }
+.toast.error { background: var(--red); color: #fff; }
+.toast.success { background: var(--green); color: #fff; }
+.toast.show { display: block; }
+
+/* Param slider display */
+.param-display { font-size: 20px; font-weight: 700; color: var(--amber); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>1/3</span> 投资法回测模拟器</h1>
+</div>
+
+<div class="container">
+  <!-- Config -->
+  <div class="config-panel">
+    <div class="config-grid">
+      <div class="form-group">
+        <label>证券代码（如 600519 / 123456 / 510300）</label>
+        <input type="text" id="stockCode" value="600519" placeholder="输入股票/转债/基金代码">
+      </div>
+      <div class="form-group">
+        <label>起始日期</label>
+        <input type="date" id="startDate" value="2024-01-01">
+      </div>
+      <div class="form-group">
+        <label>结束日期</label>
+        <input type="date" id="endDate" value="2025-05-01">
+      </div>
+      <div class="form-group">
+        <label>初始资金（元）</label>
+        <input type="number" id="initCapital" value="100000">
+      </div>
+      <div class="form-group">
+        <label>目标收益率（%）</label>
+        <input type="number" id="targetReturn" value="10" step="0.5">
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button class="btn btn-primary" id="btnRun" onclick="runBacktest()">开始回测</button>
+      </div>
+    </div>
+    <!-- Manual param override -->
+    <div style="margin-top:16px; display:flex; gap:24px; align-items:end; flex-wrap:wrap;">
+      <div class="form-group" style="margin:0">
+        <label>手动设定下跌买入阈值 x%（留空则自动优化）</label>
+        <input type="number" id="manualX" placeholder="如 5" step="0.5" style="width:120px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>手动设定上涨卖出阈值 y%（留空则自动优化）</label>
+        <input type="number" id="manualY" placeholder="如 8" step="0.5" style="width:120px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>&nbsp;</label>
+        <button class="btn btn-primary btn-sm" onclick="runManualBacktest()">手动参数回测</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div id="loadingText">正在获取数据并回测...</div>
+  </div>
+
+  <!-- Data Summary -->
+  <div class="status-bar" id="dataSummary" style="display:none;">
+    <div class="metric-card">
+      <div class="label">数据点数</div>
+      <div class="value" id="dataPoints">-</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">价格区间</div>
+      <div class="value" id="priceRange">-</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">数据日期范围</div>
+      <div class="value" id="dateRange">-</div>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="status-bar" id="statusBar" style="display:none;">
+    <div class="metric-card">
+      <div class="label">最优 x% (下跌买入)</div>
+      <div class="value green" id="bestX">-</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">最优 y% (上涨卖出)</div>
+      <div class="value red" id="bestY">-</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">模拟收益率</div>
+      <div class="value blue" id="simReturn">-</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">交易次数</div>
+      <div class="value amber" id="tradeCount">-</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">最终总资产</div>
+      <div class="value" id="finalAsset">-</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="chart-row" id="chartArea" style="display:none;">
+    <div class="chart-box full">
+      <div class="chart-title">K线图 + 买卖标记</div>
+      <div id="klineChart" style="height:420px;"></div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-title">参数热力图 (x-y → 收益率)</div>
+      <div id="heatmapChart" style="height:360px;"></div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-title">资金曲线</div>
+      <div id="equityChart" style="height:360px;"></div>
+    </div>
+  </div>
+
+  <!-- Trade Details -->
+  <div class="trade-table-wrap" id="tradeTableWrap" style="display:none;">
+    <h3>交易明细</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>日期</th><th>操作</th><th>价格</th><th>数量(股)</th>
+          <th>金额</th><th>持仓份数</th><th>剩余资金</th><th>累计收益</th>
+        </tr>
+      </thead>
+      <tbody id="tradeBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============ Core Backtesting Engine ============
+
+/**
+ * 三分之一投资法回测引擎
+ * @param {Array} priceData - [{date, open, close, high, low}]
+ * @param {number} initCapital - 初始资金
+ * @param {number} xPct - 下跌买入阈值(%)，如5表示下跌5%
+ * @param {number} yPct - 上涨卖出阈值(%)，如8表示上涨8%
+ * @returns {Object} 回测结果
+ */
+function runSimulation(priceData, initCapital, xPct, yPct) {
+  const TOTAL_LOTS = 3;
+  const lotCapital = initCapital / TOTAL_LOTS; // 每份资金
+  let cash = initCapital;
+  let sharesHeld = 0;       // 当前持有股数（允许小数模拟）
+  let totalCost = 0;        // 累计买入成本
+  let lotsHeld = 0;         // 当前持有几份(0-3)
+  let basePrice = priceData[0].close; // 基准价
+  let trades = [];
+  let equityCurve = [];
+  let buyMarkers = [];
+  let sellMarkers = [];
+
+  // 调试日志
+  const debug = xPct === 1 && yPct === 1;
+  if (debug) {
+    console.log('=== 模拟调试 x=1 y=1 ===');
+    console.log('数据点数:', priceData.length);
+    console.log('首日价格:', priceData[0].close, '类型:', typeof priceData[0].close);
+    console.log('初始basePrice:', basePrice);
+    console.log('lotCapital:', lotCapital);
+  }
+
+  for (let i = 0; i < priceData.length; i++) {
+    const d = priceData[i];
+    const price = d.close;
+    let traded = false;
+
+    // 买入判断: 当前价 <= 基准价 * (1 - x%) 且还有资金份额
+    if (lotsHeld < TOTAL_LOTS) {
+      const buyTrigger = basePrice * (1 - xPct / 100);
+      if (price <= buyTrigger) {
+        // 计算可买股数（支持小数模拟高价股，如茅台）
+        let buyShares = Math.floor(lotCapital / price);
+        // 如果钱不够100股整手，但至少能买1股（回测模拟不要求真实整数手）
+        if (buyShares < 1 && lotCapital >= price) buyShares = lotCapital / price;
+        if (debug && i < 5) console.log(`Day${i} 价格=${price} 触发=${buyTrigger.toFixed(2)} 可买=${buyShares.toFixed(2)} 现金=${cash.toFixed(0)}`);
+        if (buyShares > 0 && cash >= buyShares * price) {
+          const cost = buyShares * price;
+          cash -= cost;
+          sharesHeld += buyShares;
+          totalCost += cost;
+          lotsHeld++;
+          const avgCost = totalCost / sharesHeld;
+          basePrice = avgCost;
+          trades.push({
+            idx: i, date: d.date, type: '买入', price: price,
+            shares: buyShares, amount: cost, lotsHeld, cash,
+            returnRate: ((cash + sharesHeld * price - initCapital) / initCapital * 100)
+          });
+          buyMarkers.push({ idx: i, date: d.date, price, shares: buyShares });
+          traded = true;
+          if (debug) console.log(`  >> 买入 ${buyShares.toFixed(2)}股 @${price}, 剩余现金=${cash.toFixed(0)}`);
+        }
+      }
+    }
+
+    // 卖出判断: 当前价 >= 持仓均价 * (1 + y%) 且有持仓
+    if (!traded && lotsHeld > 0) {
+      const avgCost = totalCost / sharesHeld;
+      const sellTrigger = avgCost * (1 + yPct / 100);
+      if (price >= sellTrigger) {
+        const sellShares = sharesHeld / lotsHeld; // 卖出当前持仓中"1份"对应的股数
+        const actualSell = Math.min(sellShares, sharesHeld);
+        if (actualSell > 0) {
+          const revenue = actualSell * price;
+          cash += revenue;
+          const sellCost = (totalCost / sharesHeld) * actualSell;
+          totalCost -= sellCost;
+          sharesHeld -= actualSell;
+          lotsHeld--;
+          if (sharesHeld > 0) {
+            basePrice = totalCost / sharesHeld;
+          } else {
+            basePrice = price;
+            totalCost = 0;
+          }
+          trades.push({
+            idx: i, date: d.date, type: '卖出', price: price,
+            shares: actualSell, amount: revenue, lotsHeld, cash,
+            returnRate: ((cash + sharesHeld * price - initCapital) / initCapital * 100)
+          });
+          sellMarkers.push({ idx: i, date: d.date, price, shares: actualSell });
+        }
+      }
+    }
+
+    const totalAsset = cash + sharesHeld * price;
+    const returnRate = (totalAsset - initCapital) / initCapital * 100;
+    equityCurve.push({ date: d.date, totalAsset, returnRate, cash, marketValue: sharesHeld * price });
+  }
+
+  const lastPrice = priceData[priceData.length - 1].close;
+  const finalAsset = cash + sharesHeld * lastPrice;
+  const finalReturn = (finalAsset - initCapital) / initCapital * 100;
+
+  if (debug) {
+    console.log('模拟结束: 交易次数=', trades.length, '最终收益=', finalReturn.toFixed(2)+'%');
+  }
+
+  return {
+    finalAsset, finalReturn, trades, equityCurve, buyMarkers, sellMarkers,
+    totalTrades: trades.length, cash, sharesHeld
+  };
+}
+
+/**
+ * 参数优化: 穷举 (x, y) 组合
+ */
+function optimizeParams(priceData, initCapital, targetReturn) {
+  const results = [];
+  const xRange = [];
+  const yRange = [];
+  
+  for (let x = 1; x <= 20; x++) xRange.push(x);
+  for (let y = 1; y <= 30; y++) yRange.push(y);
+
+  for (const x of xRange) {
+    for (const y of yRange) {
+      const sim = runSimulation(priceData, initCapital, x, y);
+      results.push({
+        x, y,
+        returnRate: sim.finalReturn,
+        totalTrades: sim.totalTrades,
+        finalAsset: sim.finalAsset
+      });
+    }
+  }
+
+  // 筛选达到目标收益率的组合
+  const qualified = results.filter(r => r.returnRate >= targetReturn);
+  
+  // 按收益率降序排序
+  qualified.sort((a, b) => b.returnRate - a.returnRate);
+
+  // 如果没有达标的，返回收益率最高的
+  const allSorted = [...results].sort((a, b) => b.returnRate - a.returnRate);
+  const best = qualified.length > 0 ? qualified[0] : allSorted[0];
+
+  return { results, qualified, best, xRange, yRange };
+}
+
+// ============ UI Logic ============
+
+let cachedData = null;
+let klineChart, heatmapChart, equityChart;
+
+function showToast(msg, type = 'error') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  setTimeout(() => t.className = 'toast', 3000);
+}
+
+function setLoading(show, text = '正在获取数据并回测...') {
+  document.getElementById('loading').classList.toggle('show', show);
+  document.getElementById('loadingText').textContent = text;
+}
+
+function validateData(data) {
+  if (!Array.isArray(data) || data.length === 0) return { valid: false, reason: '数据为空' };
+  const first = data[0];
+  const required = ['date', 'open', 'close', 'high', 'low'];
+  for (const k of required) {
+    if (!(k in first)) return { valid: false, reason: `缺少字段: ${k}` };
+  }
+  const closes = data.map(d => d.close).filter(v => typeof v === 'number' && !isNaN(v));
+  if (closes.length === 0) return { valid: false, reason: '收盘价无有效数值' };
+  if (closes.length < data.length) {
+    console.warn(`数据警告: ${data.length - closes.length} 条记录收盘价无效`);
+  }
+  const minPrice = Math.min(...closes);
+  const maxPrice = Math.max(...closes);
+  if (minPrice <= 0) return { valid: false, reason: '收盘价包含非正值' };
+  return { valid: true, count: data.length, minPrice, maxPrice, firstDate: first.date, lastDate: data[data.length-1].date };
+}
+
+function getMarketPrefix(code) {
+  const c = code.trim();
+  if (/^(6|5|9|11)/.test(c)) return '1';   // Shanghai
+  if (/^(0|3|2|12|13|15|16|18)/.test(c)) return '0';  // Shenzhen
+  return '1';
+}
+
+async function fetchStockData() {
+  const code = document.getElementById('stockCode').value.trim();
+  const start = document.getElementById('startDate').value;
+  const end = document.getElementById('endDate').value;
+
+  if (!code) { showToast('请输入证券代码'); return null; }
+
+  const beg = start.replace(/-/g, '');
+  const ed = end.replace(/-/g, '');
+  const secid = getMarketPrefix(code) + '.' + code;
+  const ts = Date.now();
+
+  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&ut=7eea3edcaed734bea9cbfc24409ed989&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f116&klt=101&fqt=0&beg=${beg}&end=${ed}&_=${ts}`;
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('网络响应异常: ' + resp.status);
+    const json = await resp.json();
+
+    if (!json.data || !json.data.klines || json.data.klines.length === 0) {
+      showToast('未获取到数据，请检查代码或日期');
+      return null;
+    }
+
+    // Parse klines: date,open,close,low,high,volume,amount,...
+    const raw = json.data.klines;
+    const data = raw.map(line => {
+      const parts = line.split(',');
+      return {
+        date: parts[0],
+        open: parseFloat(parts[1]),
+        close: parseFloat(parts[2]),
+        low: parseFloat(parts[3]),
+        high: parseFloat(parts[4]),
+        volume: parseInt(parts[5]) || 0
+      };
+    });
+
+    const v = validateData(data);
+    if (!v.valid) {
+      showToast('数据校验失败: ' + v.reason);
+      console.error('数据校验失败:', v, '首条:', data[0]);
+      return null;
+    }
+    console.log('取数成功:', json.data.name || code, v);
+    return data;
+  } catch (e) {
+    showToast('取数失败: ' + e.message);
+    console.error(e);
+    return null;
+  }
+}
+
+function renderDataSummary(v) {
+  document.getElementById('dataPoints').textContent = v.count;
+  document.getElementById('priceRange').textContent = v.minPrice.toFixed(2) + ' ~ ' + v.maxPrice.toFixed(2);
+  document.getElementById('dateRange').textContent = v.firstDate + ' ~ ' + v.lastDate;
+  document.getElementById('dataSummary').style.display = 'flex';
+}
+
+async function runBacktest() {
+  setLoading(true, '正在获取历史数据...');
+  document.getElementById('btnRun').disabled = true;
+
+  try {
+    const data = await fetchStockData();
+    if (!data) return;
+    cachedData = data;
+
+    const v = validateData(data);
+    renderDataSummary(v);
+
+    const initCapital = parseFloat(document.getElementById('initCapital').value) || 100000;
+    const targetReturn = parseFloat(document.getElementById('targetReturn').value) || 10;
+
+    setLoading(true, '正在优化参数 (540种组合)...');
+    await new Promise(r => setTimeout(r, 50)); // let UI update
+
+    const optResult = optimizeParams(data, initCapital, targetReturn);
+    const best = optResult.best;
+
+    // 用最优参数跑完整模拟
+    const sim = runSimulation(data, initCapital, best.x, best.y);
+
+    // 先显示容器，再渲染图表（避免ECharts在隐藏容器中初始化导致空白）
+    document.getElementById('statusBar').style.display = 'flex';
+    document.getElementById('chartArea').style.display = 'grid';
+    document.getElementById('tradeTableWrap').style.display = 'block';
+    // 强制回流确保容器有尺寸
+    document.getElementById('chartArea').offsetHeight;
+
+    renderStatus(best, sim, initCapital);
+    renderKline(data, sim);
+    renderHeatmap(optResult, targetReturn);
+    renderEquity(data, sim, initCapital);
+    renderTradeTable(sim, initCapital);
+
+    // ECharts 在容器从隐藏变为显示后需要 resize
+    setTimeout(() => {
+      klineChart && klineChart.resize();
+      heatmapChart && heatmapChart.resize();
+      equityChart && equityChart.resize();
+    }, 100);
+
+    showToast(`回测完成！最优参数: x=${best.x}%, y=${best.y}%, 收益率=${sim.finalReturn.toFixed(2)}%`, 'success');
+  } catch (e) {
+    showToast('回测出错: ' + e.message);
+    console.error(e);
+  } finally {
+    setLoading(false);
+    document.getElementById('btnRun').disabled = false;
+  }
+}
+
+async function runManualBacktest() {
+  const mx = parseFloat(document.getElementById('manualX').value);
+  const my = parseFloat(document.getElementById('manualY').value);
+  if (!mx || !my) { showToast('请输入手动参数 x 和 y'); return; }
+
+  let data = cachedData;
+  if (!data) {
+    setLoading(true, '正在获取历史数据...');
+    data = await fetchStockData();
+    if (!data) { setLoading(false); return; }
+    cachedData = data;
+  }
+
+  const v = validateData(data);
+  renderDataSummary(v);
+
+  const initCapital = parseFloat(document.getElementById('initCapital').value) || 100000;
+  const sim = runSimulation(data, initCapital, mx, my);
+
+  document.getElementById('statusBar').style.display = 'flex';
+  document.getElementById('chartArea').style.display = 'grid';
+  document.getElementById('tradeTableWrap').style.display = 'block';
+  document.getElementById('chartArea').offsetHeight;
+
+  renderStatus({ x: mx, y: my, returnRate: sim.finalReturn }, sim, initCapital);
+  renderKline(data, sim);
+  renderEquity(data, sim, initCapital);
+  renderTradeTable(sim, initCapital);
+
+  setTimeout(() => {
+    klineChart && klineChart.resize();
+    heatmapChart && heatmapChart.resize();
+    equityChart && equityChart.resize();
+  }, 100);
+
+  showToast(`手动回测完成: x=${mx}%, y=${my}%, 收益率=${sim.finalReturn.toFixed(2)}%`, 'success');
+  setLoading(false);
+}
+
+// ============ Render Functions ============
+
+function renderStatus(best, sim, initCapital) {
+  document.getElementById('bestX').textContent = best.x + '%';
+  document.getElementById('bestY').textContent = best.y + '%';
+  document.getElementById('simReturn').textContent = sim.finalReturn.toFixed(2) + '%';
+  document.getElementById('simReturn').className = 'value ' + (sim.finalReturn >= 0 ? 'green' : 'red');
+  document.getElementById('tradeCount').textContent = sim.totalTrades;
+  document.getElementById('finalAsset').textContent = sim.finalAsset.toLocaleString('zh-CN', { maximumFractionDigits: 0 });
+}
+
+function renderKline(data, sim) {
+  const el = document.getElementById('klineChart');
+  if (!el) { console.error('K线图容器不存在'); return; }
+  if (!klineChart) klineChart = echarts.init(el);
+
+  const dates = data.map(d => d.date);
+  const ohlc = data.map(d => [d.open, d.close, d.low, d.high]);
+
+  // 买卖标记
+  const buyScatter = sim.buyMarkers.map(m => [m.date, m.price]);
+  const sellScatter = sim.sellMarkers.map(m => [m.date, m.price]);
+
+  const series = [{
+    name: 'K线', type: 'candlestick', data: ohlc,
+    itemStyle: { color: '#22c55e', color0: '#ef4444', borderColor: '#22c55e', borderColor0: '#ef4444' }
+  }];
+  if (buyScatter.length > 0) series.push({
+    name: '买入', type: 'scatter', data: buyScatter,
+    symbol: 'triangle', symbolSize: 14, itemStyle: { color: '#22c55e' }
+  });
+  if (sellScatter.length > 0) series.push({
+    name: '卖出', type: 'scatter', data: sellScatter,
+    symbol: 'diamond', symbolSize: 14, itemStyle: { color: '#ef4444' }
+  });
+
+  const legendData = ['K线'];
+  if (buyScatter.length > 0) legendData.push('买入');
+  if (sellScatter.length > 0) legendData.push('卖出');
+
+  const option = {
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    legend: { data: legendData, textStyle: { color: '#94a3b8' } },
+    grid: { left: 60, right: 60, top: 30, bottom: 80 },
+    xAxis: { type: 'category', data: dates, axisLabel: { color: '#64748b', fontSize: 10, rotate: 30 } },
+    yAxis: { type: 'value', scale: true, axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: '#1e293b' } } },
+    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 20, bottom: 10 }],
+    series: series
+  };
+  klineChart.setOption(option, true);
+}
+
+function renderHeatmap(optResult, targetReturn) {
+  if (!heatmapChart) heatmapChart = echarts.init(document.getElementById('heatmapChart'));
+
+  const { results, xRange, yRange } = optResult;
+  
+  // Build heatmap data
+  const heatData = results.map(r => [r.x - 1, r.y - 1, parseFloat(r.returnRate.toFixed(2))]);
+  const maxR = Math.max(...results.map(r => Math.abs(r.returnRate)));
+
+  const option = {
+    backgroundColor: 'transparent',
+    tooltip: {
+      formatter: function(p) {
+        const d = p.data;
+        return `x=${d[0]+1}%, y=${d[1]+1}%<br/>收益率: ${d[2]}%`;
+      }
+    },
+    grid: { left: 50, right: 40, top: 10, bottom: 50 },
+    xAxis: { type: 'category', data: xRange.map(String), name: 'x%(下跌买入)', nameLocation: 'center', nameGap: 30, axisLabel: { color: '#64748b', fontSize: 10 } },
+    yAxis: { type: 'category', data: yRange.map(String), name: 'y%(上涨卖出)', axisLabel: { color: '#64748b', fontSize: 10 } },
+    visualMap: {
+      min: -maxR, max: maxR,
+      inRange: { color: ['#ef4444', '#1e293b', '#22c55e'] },
+      textStyle: { color: '#64748b' },
+      bottom: 0, left: 'center', orient: 'horizontal'
+    },
+    series: [{
+      type: 'heatmap', data: heatData,
+      label: { show: false },
+      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } }
+    }]
+  };
+  heatmapChart.setOption(option, true);
+}
+
+function renderEquity(data, sim, initCapital) {
+  if (!equityChart) equityChart = echarts.init(document.getElementById('equityChart'));
+
+  const dates = sim.equityCurve.map(e => e.date);
+  const totalAssets = sim.equityCurve.map(e => parseFloat(e.totalAsset.toFixed(2)));
+  
+  // 持有不动的基准线
+  const firstPrice = data[0] && data[0].close ? data[0].close : 1;
+  const buyHoldShares = Math.max(0, Math.floor(initCapital / firstPrice / 100) * 100);
+  const leftoverCash = initCapital - buyHoldShares * firstPrice;
+  const buyHoldCurve = data.map(d => parseFloat((buyHoldShares * d.close + leftoverCash).toFixed(2)));
+
+  const option = {
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['三分法资产', '持有不动'], textStyle: { color: '#94a3b8' } },
+    grid: { left: 70, right: 20, top: 30, bottom: 50 },
+    xAxis: { type: 'category', data: dates, axisLabel: { color: '#64748b', fontSize: 10, rotate: 30 } },
+    yAxis: { type: 'value', axisLabel: { color: '#64748b', formatter: v => (v/10000).toFixed(1)+'万' }, splitLine: { lineStyle: { color: '#1e293b' } } },
+    dataZoom: [{ type: 'inside' }],
+    series: [
+      { name: '三分法资产', type: 'line', data: totalAssets, lineStyle: { color: '#3b82f6', width: 2 }, areaStyle: { color: 'rgba(59,130,246,0.1)' }, showSymbol: false },
+      { name: '持有不动', type: 'line', data: buyHoldCurve, lineStyle: { color: '#64748b', width: 1, type: 'dashed' }, showSymbol: false }
+    ]
+  };
+  equityChart.setOption(option, true);
+}
+
+function renderTradeTable(sim, initCapital) {
+  const tbody = document.getElementById('tradeBody');
+  let html = '';
+  sim.trades.forEach((t, i) => {
+    const cls = t.type === '买入' ? 'buy' : 'sell';
+    html += `<tr>
+      <td>${i + 1}</td>
+      <td>${t.date}</td>
+      <td class="${cls}">${t.type}</td>
+      <td>${t.price.toFixed(2)}</td>
+      <td>${t.shares}</td>
+      <td>${t.amount.toFixed(2)}</td>
+      <td>${t.lotsHeld}/3</td>
+      <td>${t.cash.toFixed(2)}</td>
+      <td class="${t.returnRate >= 0 ? 'buy' : 'sell'}">${t.returnRate.toFixed(2)}%</td>
+    </tr>`;
+  });
+  tbody.innerHTML = html;
+}
+
+// Resize
+window.addEventListener('resize', () => {
+  klineChart && klineChart.resize();
+  heatmapChart && heatmapChart.resize();
+  equityChart && equityChart.resize();
+});
+</script>
+</body>
+</html>
